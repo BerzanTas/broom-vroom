@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.bedix.broomvroom.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "HumanoidRenderStateMixin",
+    "LivingEntityRendererMixin",
+    "HumanoidModelMixin",
+    "AvatarRendererMixin",
+    "CameraMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

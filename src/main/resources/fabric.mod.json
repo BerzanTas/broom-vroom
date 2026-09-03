@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "broomvroom",
+  "version": "${version}",
+  "name": "Broom Vroom",
+  "description": "Rideable brooms for Fabric.",
+  "authors": ["bedix"],
+  "contact": {
+    "sources": "https://github.com/BerzanTas/broom-vroom"
+  },
+  "license": "All-Rights-Reserved",
+  "icon": "assets/broomvroom/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "dev.bedix.broomvroom.client.BroomvroomDataGenerator"
+    ],
+    "client": [
+      "dev.bedix.broomvroom.client.BroomvroomClient"
+    ],
+    "main": [
+      "dev.bedix.broomvroom.Broomvroom"
+    ]
+  },
+  "mixins": [
+    "broomvroom.mixins.json",
+    {
+      "config": "broomvroom.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "S": "minecraft:stick",
+    "H": "minecraft:hay_block",
+    "G": "minecraft:glowstone_dust"
+  },
+  "pattern": [
+    " S ",
+    " S ",
+    "GH "
+  ],
+  "result": {
+    "id": "broomvroom:broom"
+  }
+}

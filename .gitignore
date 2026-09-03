@@ -1,0 +1,26 @@
+# gradle
+.gradle/
+build/
+out/
+classes/
+
+# ide
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+*.launch
+bin/
+
+# macos
+.DS_Store
+
+# fabric loom / test client
+run/
+*.log
+hs_err_*.log
+replay_pid*.log
