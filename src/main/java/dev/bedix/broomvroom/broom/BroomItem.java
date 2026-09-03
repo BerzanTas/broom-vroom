@@ -26,7 +26,7 @@ public class BroomItem extends Item {
 		UUID itemOwner = BroomEntity.readOwner(stack);
 		if (itemOwner != null && !itemOwner.equals(player.getUUID())) {
 			if (!level.isClientSide()) {
-				player.sendOverlayMessage(Component.literal("To nie twoja miotła."));
+				player.sendOverlayMessage(Component.translatable("broomvroom.message.not_owner"));
 			}
 			return InteractionResult.FAIL;
 		}

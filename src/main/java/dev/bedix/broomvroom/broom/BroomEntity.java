@@ -221,7 +221,7 @@ public class BroomEntity extends Entity {
 		}
 		if (this.ownerUuid != null && !isOwnedBy(player)) {
 			if (!level().isClientSide()) {
-				player.sendOverlayMessage(Component.literal("To nie twoja miotła."));
+				player.sendOverlayMessage(Component.translatable("broomvroom.message.not_owner"));
 			}
 			return InteractionResult.FAIL;
 		}
@@ -231,9 +231,9 @@ public class BroomEntity extends Entity {
 				if (this.staying) {
 					this.stayAnchor = position();
 					this.wanderTicks = 0;
-					player.sendOverlayMessage(Component.literal("Miotła zostaje."));
+					player.sendOverlayMessage(Component.translatable("broomvroom.message.staying"));
 				} else {
-					player.sendOverlayMessage(Component.literal("Miotła idzie za tobą."));
+					player.sendOverlayMessage(Component.translatable("broomvroom.message.following"));
 				}
 			}
 			return InteractionResult.SUCCESS;
@@ -543,7 +543,7 @@ public class BroomEntity extends Entity {
 			return false;
 		}
 		if (this.ownerUuid != null && !isOwnedBy(player)) {
-			player.sendOverlayMessage(Component.literal("To nie twoja miotła."));
+			player.sendOverlayMessage(Component.translatable("broomvroom.message.not_owner"));
 			return false;
 		}
 		if (this.ownerUuid == null) {

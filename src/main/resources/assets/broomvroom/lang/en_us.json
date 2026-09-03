@@ -1,5 +1,8 @@
 {
   "item.broomvroom.broom": "Broom",
   "entity.broomvroom.broom": "Broom",
-  "entity.broomvroom.broom_hay": "Broom Hay"
+  "entity.broomvroom.broom_hay": "Broom Hay",
+  "broomvroom.message.not_owner": "That's not your broom.",
+  "broomvroom.message.staying": "Broom stays put.",
+  "broomvroom.message.following": "Broom follows you."
 }
