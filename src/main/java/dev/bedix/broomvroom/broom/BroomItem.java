@@ -1,7 +1,6 @@
 package dev.bedix.broomvroom.broom;
 
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -24,12 +23,6 @@ public class BroomItem extends Item {
 	public InteractionResult use(Level level, Player player, InteractionHand hand) {
 		ItemStack stack = player.getItemInHand(hand);
 		UUID itemOwner = BroomEntity.readOwner(stack);
-		if (itemOwner != null && !itemOwner.equals(player.getUUID())) {
-			if (!level.isClientSide()) {
-				player.sendOverlayMessage(Component.translatable("broomvroom.message.not_owner"));
-			}
-			return InteractionResult.FAIL;
-		}
 
 		BlockHitResult hit = getPlayerPOVHitResult(level, player, ClipContext.Fluid.NONE);
 		if (hit.getType() != HitResult.Type.BLOCK) {
@@ -43,7 +36,11 @@ public class BroomItem extends Item {
 			return InteractionResult.FAIL;
 		}
 		if (!level.isClientSide()) {
-			broom.setOwner(player);
+			if (itemOwner != null) {
+				broom.setOwnerUuid(itemOwner);
+			} else {
+				broom.setOwner(player);
+			}
 			if (stack.has(DataComponents.CUSTOM_NAME)) {
 				broom.setCustomName(stack.get(DataComponents.CUSTOM_NAME));
 				broom.setCustomNameVisible(true);
