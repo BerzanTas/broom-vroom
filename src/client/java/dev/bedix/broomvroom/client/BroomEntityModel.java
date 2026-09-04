@@ -25,7 +25,7 @@ public class BroomEntityModel extends EntityModel<BroomEntityRenderState> {
 	private static final float LEN30 = 0.88f;
 	private static final float HANDLE_LEN = 5.5f;
 	private static final float SEAT_LEN = 2.5f;
-	private static final float REAR_LEN = 2.0f;
+	private static final float REAR_LEN = 1.35f;
 	private static final float HALF_MAIN = 0.5f;
 	private static final float HALF_15 = 0.42f;
 	private static final float HALF_30 = 0.32f;

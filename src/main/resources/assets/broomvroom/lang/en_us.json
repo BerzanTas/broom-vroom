@@ -4,5 +4,8 @@
   "entity.broomvroom.broom_hay": "Broom Hay",
   "broomvroom.message.not_owner": "That's not your broom.",
   "broomvroom.message.staying": "Broom stays put.",
-  "broomvroom.message.following": "Broom follows you."
+  "broomvroom.message.following": "Broom follows you.",
+  "broomvroom.message.no_broom": "No broom nearby.",
+  "key.broomvroom.recall": "Call Broom",
+  "key.category.broomvroom.broom": "Broom Vroom"
 }

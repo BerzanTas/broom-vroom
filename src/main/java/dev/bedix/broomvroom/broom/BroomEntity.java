@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -24,6 +25,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -31,19 +34,25 @@ import java.util.UUID;
 
 public class BroomEntity extends Entity {
 
-	public static final double LANDING_DISTANCE = 1.0;
 	private static final double MIN_GROUND_CLEARANCE = 0.65;
 	private static final double CLEARANCE_EPSILON = 0.04;
 	private static final float IDLE_SINK_STEP = 0.015f;
 	private static final float IDLE_SINK_MAX = 0.125f;
-	private static final double FOLLOW_START = 7.0;
-	private static final double FOLLOW_MAX = 11.0;
-	private static final double WANDER_RADIUS = 4.4;
+	private static final double FOLLOW_START = 14.0;
+	private static final double WANDER_RADIUS = 8.8;
 	private static final double MAX_HOVER = 2.0;
 	private static final double MIN_HOVER = 0.45;
+	private static final double RECALL_SPEED_GROUNDED = 1.25;
+	private static final double PLAYER_FALL_TERMINAL = 3.92;
+	private static final double RECALL_FALL_SPEED = PLAYER_FALL_TERMINAL + 0.8;
+	private static final double FLY_SPEED = 0.55;
+	private static final double TURBO_MULTIPLIER = 2.0;
+	private static final double IMPACT_SPEED = 0.5;
+	private static final double IMPACT_MIN_RUN = 10.0;
+	private static final double COAST_DRAG = 0.93;
 	private static final String OWNER_TAG = "BroomOwner";
 	private static final double STAY_RADIUS = 1.4;
-	private static final double HAY_HITBOX_DISTANCE = 1.35;
+	private static final double HAY_HITBOX_DISTANCE = 0.98;
 
 	private UUID ownerUuid;
 	private boolean staying;
@@ -55,7 +64,20 @@ public class BroomEntity extends Entity {
 	private float visualPitchO;
 	private Vec3 wanderTarget = Vec3.ZERO;
 	private int wanderTicks;
+	private int dismountHoldTicks;
 	private BroomHayEntity hay;
+	private boolean recalling;
+	private int impactCooldown;
+	private double crashRun;
+	private Vec3 lastRideMotion = Vec3.ZERO;
+
+	public static ImpactSender impactSender = damage -> {
+	};
+
+	@FunctionalInterface
+	public interface ImpactSender {
+		void send(float damage);
+	}
 
 	public BroomEntity(EntityType<? extends BroomEntity> type, Level world) {
 		super(type, world);
@@ -130,6 +152,14 @@ public class BroomEntity extends Entity {
 
 	@Override
 	public void onRemoval(RemovalReason reason) {
+		if (!level().isClientSide() && this.ownerUuid != null && level().getServer() != null) {
+			BroomLocatorData data = BroomLocatorData.get(level().getServer());
+			if (reason == RemovalReason.UNLOADED_TO_CHUNK || reason == RemovalReason.UNLOADED_WITH_PLAYER) {
+				data.remember(this);
+			} else if (reason.shouldDestroy()) {
+				data.forget(this);
+			}
+		}
 		super.onRemoval(reason);
 		if (this.hay != null && !this.hay.isRemoved() && reason.shouldDestroy()) {
 			this.hay.discard();
@@ -143,11 +173,27 @@ public class BroomEntity extends Entity {
 	}
 
 	public void setOwner(Player player) {
-		this.ownerUuid = player.getUUID();
+		setOwnerUuid(player.getUUID());
 		if (getCustomName() == null) {
 			setCustomName(player.getName());
 			setCustomNameVisible(true);
 		}
+	}
+
+	public void setOwnerUuid(UUID uuid) {
+		this.ownerUuid = uuid;
+	}
+
+	public UUID getOwnerUuid() {
+		return this.ownerUuid;
+	}
+
+	public void startRecall() {
+		this.staying = false;
+		this.recalling = true;
+		this.wanderTicks = 0;
+		this.dismountHoldTicks = 0;
+		setNoGravity(true);
 	}
 
 	public boolean isOwnedBy(Player player) {
@@ -259,13 +305,27 @@ public class BroomEntity extends Entity {
 	protected void addPassenger(Entity passenger) {
 		super.addPassenger(passenger);
 		this.staying = false;
+		this.recalling = false;
 		setNoGravity(true);
 	}
 
 	@Override
 	protected void removePassenger(Entity passenger) {
+		Vec3 vel = this.lastRideMotion;
+		if (vel.lengthSqr() < 0.01) {
+			vel = getDeltaMovement();
+		}
+		if (vel.lengthSqr() < 0.01 && passenger instanceof Player player && isFlyingForward(player)) {
+			double speed = isTurboHeld(player) ? FLY_SPEED * TURBO_MULTIPLIER : FLY_SPEED;
+			vel = player.getLookAngle().scale(speed);
+		}
 		super.removePassenger(passenger);
 		setNoGravity(true);
+		setDeltaMovement(vel);
+		this.lastRideMotion = vel;
+		this.dismountHoldTicks = 40 + this.random.nextInt(61);
+		this.wanderTicks = 0;
+		this.crashRun = 0.0;
 	}
 
 	@Override
@@ -280,9 +340,18 @@ public class BroomEntity extends Entity {
 
 		setCustomNameVisible(!isVehicle() && getCustomName() != null);
 
+		if (level().isClientSide() && isVehicle()) {
+			spawnFlightParticles();
+		}
+
+		if (!level().isClientSide() && this.ownerUuid != null && this.tickCount % 20 == 0 && level().getServer() != null) {
+			BroomLocatorData.get(level().getServer()).remember(this);
+		}
+
 		Player rider = getControllingPassenger() instanceof Player player ? player : null;
 		if (rider != null) {
 			updateVisualOrientation(rider);
+			this.lastRideMotion = computeRideMotion(rider);
 		} else {
 			this.visualPitch = Mth.lerp(0.2f, this.visualPitch, 0.0f);
 			this.roll = Mth.lerp(0.2f, this.roll, 0.0f);
@@ -301,7 +370,9 @@ public class BroomEntity extends Entity {
 
 		Vec3 motion;
 		if (rider.zza > 0.0f) {
-			motion = rider.getLookAngle().scale(0.55);
+			boolean turbo = rider.isSprinting();
+			double speed = turbo ? FLY_SPEED * TURBO_MULTIPLIER : FLY_SPEED;
+			motion = rider.getLookAngle().scale(speed);
 		} else {
 			Vec3 current = getDeltaMovement();
 			double height = heightAboveGround();
@@ -313,10 +384,45 @@ public class BroomEntity extends Entity {
 			}
 		}
 
+		if (rider.zza > 0.0f) {
+			this.crashRun += motion.length();
+		} else {
+			this.crashRun *= 0.55;
+		}
+
 		setDeltaMovement(motion);
 		move(MoverType.SELF, getDeltaMovement());
+		handleImpact(motion, rider);
 		applyGroundClearance();
 		updateHayHitbox();
+	}
+
+	private void handleImpact(Vec3 motion, Player rider) {
+		if (this.impactCooldown > 0) {
+			this.impactCooldown--;
+			return;
+		}
+		double speed = motion.length();
+		if (speed < IMPACT_SPEED || this.crashRun < IMPACT_MIN_RUN) {
+			return;
+		}
+		boolean hit = this.horizontalCollision || this.verticalCollision;
+		if (!hit) {
+			return;
+		}
+		float runScale = Mth.clamp((float) ((this.crashRun - IMPACT_MIN_RUN) / 16.0), 0.15f, 1.0f);
+		float fallLike = (float) (speed * 12.0);
+		float damage = Math.max(0.0f, (fallLike - 3.0f) * 0.65f * runScale);
+		this.crashRun = 0.0;
+		if (damage < 1.0f) {
+			return;
+		}
+		this.impactCooldown = 12;
+		if (level().isClientSide()) {
+			impactSender.send(damage);
+		} else {
+			rider.hurt(rider.damageSources().flyIntoWall(), damage);
+		}
 	}
 
 	private void updateVisualOrientation(Player player) {
@@ -349,8 +455,92 @@ public class BroomEntity extends Entity {
 		return Double.isFinite(height) && height <= 1.15;
 	}
 
+	private static boolean isFlyingForward(Player player) {
+		if (player.zza > 0.0f) {
+			return true;
+		}
+		return player instanceof ServerPlayer serverPlayer && serverPlayer.getLastClientInput().forward();
+	}
+
+	private static boolean isTurboHeld(Player player) {
+		if (player.isSprinting()) {
+			return true;
+		}
+		return player instanceof ServerPlayer serverPlayer && serverPlayer.getLastClientInput().sprint();
+	}
+
+	private static Vec3 computeRideMotion(Player rider) {
+		if (!isFlyingForward(rider)) {
+			return Vec3.ZERO;
+		}
+		double speed = isTurboHeld(rider) ? FLY_SPEED * TURBO_MULTIPLIER : FLY_SPEED;
+		return rider.getLookAngle().scale(speed);
+	}
+
+	private void spawnFlightParticles() {
+		Vec3 vel = getDeltaMovement();
+		if (vel.lengthSqr() < 0.04) {
+			return;
+		}
+		boolean turbo = vel.lengthSqr() > 0.7;
+		if (!turbo && this.random.nextFloat() > 0.55f) {
+			return;
+		}
+		Vec3 hay = hayHitboxPos().add(0.0, 0.28, 0.0);
+		Vec3 back = vel.normalize().scale(-0.18);
+		int count = turbo ? 2 : 1;
+		for (int i = 0; i < count; i++) {
+			double ox = (this.random.nextDouble() - 0.5) * 0.4;
+			double oy = (this.random.nextDouble() - 0.5) * 0.32;
+			double oz = (this.random.nextDouble() - 0.5) * 0.4;
+			level().addParticle(
+					ParticleTypes.SMALL_GUST,
+					hay.x + ox,
+					hay.y + oy,
+					hay.z + oz,
+					back.x,
+					back.y * 0.15,
+					back.z
+			);
+			if (this.random.nextFloat() < 0.45f) {
+				level().addParticle(
+						new DustParticleOptions(0xC9A35A, 0.65f),
+						hay.x + ox,
+						hay.y + oy,
+						hay.z + oz,
+						back.x * 0.4,
+						0.02,
+						back.z * 0.4
+				);
+			}
+		}
+	}
+
+	private void tickCoast() {
+		Vec3 vel = getDeltaMovement().scale(COAST_DRAG);
+		if (vel.lengthSqr() < 0.0012) {
+			setDeltaMovement(Vec3.ZERO);
+			updateHayHitbox();
+			return;
+		}
+		setDeltaMovement(vel);
+		move(MoverType.SELF, vel);
+		applyGroundClearance();
+		faceVelocity();
+		updateHayHitbox();
+	}
+
 	private void tickCompanion() {
 		setNoGravity(true);
+		if (this.recalling) {
+			tickRecall();
+			return;
+		}
+		if (this.dismountHoldTicks > 0) {
+			this.dismountHoldTicks--;
+			tickCoast();
+			return;
+		}
 		if (this.staying) {
 			tickStay();
 			return;
@@ -388,10 +578,10 @@ public class BroomEntity extends Entity {
 						ty,
 						player.getZ() + Math.sin(ang) * rad
 				);
-				this.wanderTicks = 35 + this.random.nextInt(55);
+				this.wanderTicks = 50 + this.random.nextInt(70);
 			}
 			this.wanderTicks--;
-			double bob = Math.sin((tickCount + this.wanderTicks) * 0.11) * 0.18;
+			double bob = Math.sin((tickCount + this.wanderTicks) * 0.09) * 0.14;
 			dest = new Vec3(
 					this.wanderTarget.x,
 					Mth.clamp(this.wanderTarget.y + bob, minY, maxY),
@@ -400,8 +590,8 @@ public class BroomEntity extends Entity {
 		}
 
 		double dist = dest.subtract(position()).length();
-		double maxSpeed = chasing ? Math.min(0.55, 0.16 + dist * 0.06) : 0.09;
-		nudgeToward(dest, maxSpeed, chasing ? 0.55 : 0.12);
+		double maxSpeed = chasing ? Math.min(0.55, 0.16 + dist * 0.06) : 0.08;
+		nudgeToward(dest, maxSpeed, chasing ? 0.55 : 0.1);
 
 		double clampedY = Mth.clamp(getY(), minY, maxY);
 		if (clampedY != getY()) {
@@ -409,6 +599,56 @@ public class BroomEntity extends Entity {
 			setDeltaMovement(getDeltaMovement().x, 0.0, getDeltaMovement().z);
 		}
 		faceVelocity();
+	}
+
+	private void tickRecall() {
+		Player player = findOwnerPlayer();
+		if (player == null) {
+			this.recalling = false;
+			return;
+		}
+		if (player.isPassenger() || isVehicle()) {
+			this.recalling = false;
+			return;
+		}
+		Vec3 dest = recallDest(player);
+		Vec3 delta = dest.subtract(position());
+		double dist = delta.length();
+		if (dist < 2.5) {
+			setPos(player.getX(), player.getY() + 0.4, player.getZ());
+			setDeltaMovement(Vec3.ZERO);
+			this.recalling = false;
+			player.startRiding(this);
+			return;
+		}
+		double speed = Math.min(recallSpeed(player), dist);
+		Vec3 step = delta.scale(speed / dist);
+		setPos(getX() + step.x, getY() + step.y, getZ() + step.z);
+		setDeltaMovement(step);
+		faceVelocity();
+	}
+
+	private static boolean isFalling(Player player) {
+		if (player.onGround() || player.isInWater()) {
+			return false;
+		}
+		return player.getDeltaMovement().y < -0.08 || player.fallDistance > 0.2;
+	}
+
+	private static Vec3 recallDest(Player player) {
+		Vec3 dest = player.position().add(0.0, 0.4, 0.0);
+		if (!isFalling(player)) {
+			return dest;
+		}
+		Vec3 vel = player.getDeltaMovement();
+		return dest.add(vel.x * 2.0, vel.y * 2.5, vel.z * 2.0);
+	}
+
+	private static double recallSpeed(Player player) {
+		if (!isFalling(player)) {
+			return RECALL_SPEED_GROUNDED;
+		}
+		return RECALL_FALL_SPEED;
 	}
 
 	private void tickStay() {
@@ -512,23 +752,6 @@ public class BroomEntity extends Entity {
 		return new Vec3(0.0, 0.18, 0.0);
 	}
 
-	public boolean canLand() {
-		if (onGround()) {
-			return true;
-		}
-
-		Vec3 from = position();
-		Vec3 to = from.subtract(0.0, LANDING_DISTANCE, 0.0);
-		var hit = level().clip(new ClipContext(
-				from,
-				to,
-				ClipContext.Block.COLLIDER,
-				ClipContext.Fluid.NONE,
-				this
-		));
-		return hit.getType() == HitResult.Type.BLOCK;
-	}
-
 	@Override
 	public boolean isAttackable() {
 		return true;
@@ -540,10 +763,6 @@ public class BroomEntity extends Entity {
 			return false;
 		}
 		if (!(source.getEntity() instanceof Player player)) {
-			return false;
-		}
-		if (this.ownerUuid != null && !isOwnedBy(player)) {
-			player.sendOverlayMessage(Component.translatable("broomvroom.message.not_owner"));
 			return false;
 		}
 		if (this.ownerUuid == null) {

@@ -4,7 +4,6 @@
   "package": "dev.bedix.broomvroom.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
-    "PlayerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

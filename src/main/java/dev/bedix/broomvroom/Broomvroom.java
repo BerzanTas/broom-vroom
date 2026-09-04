@@ -1,11 +1,15 @@
 package dev.bedix.broomvroom;
 
+import dev.bedix.broomvroom.broom.BroomCall;
 import dev.bedix.broomvroom.broom.BroomEntity;
+import dev.bedix.broomvroom.broom.BroomImpactPayload;
+import dev.bedix.broomvroom.broom.CallBroomPayload;
 import dev.bedix.broomvroom.broom.ModEntityTypes;
 import dev.bedix.broomvroom.broom.ModItems;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
-import net.minecraft.world.damagesource.DamageTypes;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.util.Mth;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,11 +19,22 @@ public class Broomvroom implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
-            if (!(entity.getVehicle() instanceof BroomEntity)) {
-                return true;
-            }
-            return !source.is(DamageTypes.FALL) && !source.is(DamageTypes.FLY_INTO_WALL);
+        PayloadTypeRegistry.serverboundPlay().register(CallBroomPayload.TYPE, CallBroomPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(BroomImpactPayload.TYPE, BroomImpactPayload.CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(CallBroomPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> BroomCall.call(context.player()));
+        });
+        ServerPlayNetworking.registerGlobalReceiver(BroomImpactPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                var player = context.player();
+                if (!(player.getVehicle() instanceof BroomEntity)) {
+                    return;
+                }
+                float damage = Mth.clamp(payload.damage(), 0.0f, 16.0f);
+                if (damage >= 1.0f) {
+                    player.hurt(player.damageSources().flyIntoWall(), damage);
+                }
+            });
         });
 
         ModEntityTypes.initialize();

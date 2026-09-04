@@ -8,7 +8,8 @@
     "LivingEntityRendererMixin",
     "HumanoidModelMixin",
     "AvatarRendererMixin",
-    "CameraMixin"
+    "CameraMixin",
+    "LocalPlayerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

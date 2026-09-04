@@ -48,6 +48,7 @@ public class BroomEntityRenderer extends EntityRenderer<BroomEntity, BroomEntity
         poseStack.mulPose(Axis.YP.rotationDegrees(-state.yRot + 180.0f));
         poseStack.mulPose(Axis.XP.rotationDegrees(-state.xRot));
         poseStack.mulPose(Axis.ZP.rotationDegrees(state.roll));
+        poseStack.translate(0.0f, 0.0f, -0.32f);
         poseStack.scale(2.25f, 2.25f, 2.25f);
         collector.submitModel(
                 this.model,
